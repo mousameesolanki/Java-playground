@@ -1,0 +1,676 @@
+import java.time.Instant;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
+
+public class GoogleDocsVersionSystem {
+
+    // ============================================================
+    // ENUMS
+    // ============================================================
+
+    enum OperationType {
+        CREATE,
+        EDIT,
+        RESTORE
+    }
+
+    // ============================================================
+    // ENTITIES
+    // ============================================================
+
+    static class User {
+        private final String id;
+        private final String name;
+
+        User(String id, String name) {
+            this.id = id;
+            this.name = name;
+        }
+
+        public String getId() {
+            return id;
+        }
+    }
+
+    static class Document {
+        private final String id;
+        private String title;
+        private String latestVersionId;
+        private long versionNumber;
+        private final String ownerId;
+        private final Instant createdAt;
+        private Instant updatedAt;
+
+        Document(
+                String id,
+                String title,
+                String ownerId
+        ) {
+            this.id = id;
+            this.title = title;
+            this.ownerId = ownerId;
+            this.versionNumber = 0;
+            this.createdAt = Instant.now();
+            this.updatedAt = this.createdAt;
+        }
+
+        public String getId() {
+            return id;
+        }
+
+        public String getLatestVersionId() {
+            return latestVersionId;
+        }
+
+        public long getVersionNumber() {
+            return versionNumber;
+        }
+
+        public void updateLatestVersion(
+                String versionId,
+                long versionNumber
+        ) {
+            this.latestVersionId = versionId;
+            this.versionNumber = versionNumber;
+            this.updatedAt = Instant.now();
+        }
+    }
+
+    static class DocumentVersion {
+        private final String versionId;
+        private final String documentId;
+        private final long versionNumber;
+        private final String parentVersionId;
+        private final String content;
+        private final String createdBy;
+        private final OperationType operationType;
+        private final Instant createdAt;
+
+        DocumentVersion(
+                String versionId,
+                String documentId,
+                long versionNumber,
+                String parentVersionId,
+                String content,
+                String createdBy,
+                OperationType operationType
+        ) {
+            this.versionId = versionId;
+            this.documentId = documentId;
+            this.versionNumber = versionNumber;
+            this.parentVersionId = parentVersionId;
+            this.content = content;
+            this.createdBy = createdBy;
+            this.operationType = operationType;
+            this.createdAt = Instant.now();
+        }
+
+        public String getVersionId() {
+            return versionId;
+        }
+
+        public long getVersionNumber() {
+            return versionNumber;
+        }
+
+        public String getContent() {
+            return content;
+        }
+
+        @Override
+        public String toString() {
+            return "Version{" +
+                    "versionId='" + versionId + '\'' +
+                    ", versionNumber=" + versionNumber +
+                    ", operation=" + operationType +
+                    ", content='" + content + '\'' +
+                    '}';
+        }
+    }
+
+    // ============================================================
+    // REPOSITORIES
+    // ============================================================
+
+    interface DocumentRepository {
+
+        Document save(Document document);
+
+        Optional<Document> findById(String documentId);
+
+        void updateLatestVersion(
+                String documentId,
+                String versionId,
+                long versionNumber
+        );
+    }
+
+    interface VersionRepository {
+
+        DocumentVersion save(DocumentVersion version);
+
+        Optional<DocumentVersion> findVersion(
+                String documentId,
+                long versionNumber
+        );
+
+        List<DocumentVersion> findAll(
+                String documentId
+        );
+    }
+
+    // ============================================================
+    // IN-MEMORY DOCUMENT REPOSITORY
+    // ============================================================
+
+    static class InMemoryDocumentRepository
+            implements DocumentRepository {
+
+        private final Map<String, Document> documents =
+                new ConcurrentHashMap<>();
+
+        @Override
+        public Document save(Document document) {
+            documents.put(document.getId(), document);
+            return document;
+        }
+
+        @Override
+        public Optional<Document> findById(String documentId) {
+            return Optional.ofNullable(documents.get(documentId));
+        }
+
+        @Override
+        public void updateLatestVersion(
+                String documentId,
+                String versionId,
+                long versionNumber
+        ) {
+            Document document = documents.get(documentId);
+
+            if (document == null) {
+                throw new IllegalArgumentException(
+                        "Document not found"
+                );
+            }
+
+            document.updateLatestVersion(
+                    versionId,
+                    versionNumber
+            );
+        }
+    }
+
+    // ============================================================
+    // IN-MEMORY VERSION REPOSITORY
+    // ============================================================
+
+    static class InMemoryVersionRepository
+            implements VersionRepository {
+
+        private final Map<String, List<DocumentVersion>> versions =
+                new ConcurrentHashMap<>();
+
+        @Override
+        public DocumentVersion save(DocumentVersion version) {
+
+            versions.computeIfAbsent(
+                    version.documentId,
+                    k -> new ArrayList<>()
+            ).add(version);
+
+            return version;
+        }
+
+        @Override
+        public Optional<DocumentVersion> findVersion(
+                String documentId,
+                long versionNumber
+        ) {
+
+            return versions
+                    .getOrDefault(
+                            documentId,
+                            Collections.emptyList()
+                    )
+                    .stream()
+                    .filter(v ->
+                            v.getVersionNumber() == versionNumber
+                    )
+                    .findFirst();
+        }
+
+        @Override
+        public List<DocumentVersion> findAll(
+                String documentId
+        ) {
+
+            return new ArrayList<>(
+                    versions.getOrDefault(
+                            documentId,
+                            Collections.emptyList()
+                    )
+            );
+        }
+    }
+
+    // ============================================================
+    // VERSION FACTORY
+    // ============================================================
+
+    static class VersionFactory {
+
+        private final AtomicLong idGenerator =
+                new AtomicLong(1);
+
+        public DocumentVersion create(
+                String documentId,
+                long versionNumber,
+                String parentVersionId,
+                String content,
+                String userId,
+                OperationType operationType
+        ) {
+
+            String versionId =
+                    "V" + idGenerator.getAndIncrement();
+
+            return new DocumentVersion(
+                    versionId,
+                    documentId,
+                    versionNumber,
+                    parentVersionId,
+                    content,
+                    userId,
+                    operationType
+            );
+        }
+    }
+
+    // ============================================================
+    // LOCK MANAGER
+    // ============================================================
+
+    static class DocumentLockManager {
+
+        private final Map<String, Object> locks =
+                new ConcurrentHashMap<>();
+
+        public Object getLock(String documentId) {
+            return locks.computeIfAbsent(
+                    documentId,
+                    id -> new Object()
+            );
+        }
+    }
+
+    // ============================================================
+    // SERVICE
+    // ============================================================
+
+    static class DocumentService {
+
+        private final DocumentRepository documentRepository;
+        private final VersionRepository versionRepository;
+        private final VersionFactory versionFactory;
+        private final DocumentLockManager lockManager;
+
+        private final AtomicLong documentIdGenerator =
+                new AtomicLong(1);
+
+        DocumentService(
+                DocumentRepository documentRepository,
+                VersionRepository versionRepository,
+                VersionFactory versionFactory,
+                DocumentLockManager lockManager
+        ) {
+            this.documentRepository = documentRepository;
+            this.versionRepository = versionRepository;
+            this.versionFactory = versionFactory;
+            this.lockManager = lockManager;
+        }
+
+        // --------------------------------------------------------
+        // CREATE DOCUMENT
+        // --------------------------------------------------------
+
+        public DocumentVersion createDocument(
+                String title,
+                String content,
+                User user
+        ) {
+
+            String documentId =
+                    "D" + documentIdGenerator.getAndIncrement();
+
+            Document document =
+                    new Document(
+                            documentId,
+                            title,
+                            user.getId()
+                    );
+
+            documentRepository.save(document);
+
+            DocumentVersion version =
+                    versionFactory.create(
+                            documentId,
+                            1,
+                            null,
+                            content,
+                            user.getId(),
+                            OperationType.CREATE
+                    );
+
+            versionRepository.save(version);
+
+            document.updateLatestVersion(
+                    version.getVersionId(),
+                    1
+            );
+
+            return version;
+        }
+
+        // --------------------------------------------------------
+        // UPDATE DOCUMENT
+        // --------------------------------------------------------
+
+        public DocumentVersion updateDocument(
+                String documentId,
+                String newContent,
+                long expectedVersion,
+                User user
+        ) {
+
+            Object lock =
+                    lockManager.getLock(documentId);
+
+            synchronized (lock) {
+
+                Document document =
+                        documentRepository
+                                .findById(documentId)
+                                .orElseThrow(() ->
+                                        new IllegalArgumentException(
+                                                "Document not found"
+                                        )
+                                );
+
+                /*
+                 * Optimistic concurrency check
+                 */
+                if (document.getVersionNumber()
+                        != expectedVersion) {
+
+                    throw new ConcurrentModificationException(
+                            "Version conflict. Expected="
+                                    + expectedVersion
+                                    + ", Actual="
+                                    + document.getVersionNumber()
+                    );
+                }
+
+                long newVersionNumber =
+                        expectedVersion + 1;
+
+                DocumentVersion version =
+                        versionFactory.create(
+                                documentId,
+                                newVersionNumber,
+                                document.getLatestVersionId(),
+                                newContent,
+                                user.getId(),
+                                OperationType.EDIT
+                        );
+
+                /*
+                 * In a real DB implementation these two operations
+                 * must be inside ONE transaction.
+                 */
+                versionRepository.save(version);
+
+                documentRepository.updateLatestVersion(
+                        documentId,
+                        version.getVersionId(),
+                        newVersionNumber
+                );
+
+                return version;
+            }
+        }
+
+        // --------------------------------------------------------
+        // GET CURRENT VERSION
+        // --------------------------------------------------------
+
+        public DocumentVersion getCurrentVersion(
+                String documentId
+        ) {
+
+            Document document =
+                    documentRepository
+                            .findById(documentId)
+                            .orElseThrow(() ->
+                                    new IllegalArgumentException(
+                                            "Document not found"
+                                    )
+                            );
+
+            return versionRepository
+                    .findVersion(
+                            documentId,
+                            document.getVersionNumber()
+                    )
+                    .orElseThrow(() ->
+                            new IllegalStateException(
+                                    "Current version missing"
+                            )
+                    );
+        }
+
+        // --------------------------------------------------------
+        // GET SPECIFIC VERSION
+        // --------------------------------------------------------
+
+        public DocumentVersion getVersion(
+                String documentId,
+                long versionNumber
+        ) {
+
+            return versionRepository
+                    .findVersion(
+                            documentId,
+                            versionNumber
+                    )
+                    .orElseThrow(() ->
+                            new IllegalArgumentException(
+                                    "Version not found"
+                            )
+                    );
+        }
+
+        // --------------------------------------------------------
+        // VERSION HISTORY
+        // --------------------------------------------------------
+
+        public List<DocumentVersion> getHistory(
+                String documentId
+        ) {
+
+            return versionRepository.findAll(
+                    documentId
+            );
+        }
+
+        // --------------------------------------------------------
+        // RESTORE VERSION
+        // --------------------------------------------------------
+
+        public DocumentVersion restoreVersion(
+                String documentId,
+                long versionToRestore,
+                long expectedCurrentVersion,
+                User user
+        ) {
+
+            Object lock =
+                    lockManager.getLock(documentId);
+
+            synchronized (lock) {
+
+                Document document =
+                        documentRepository
+                                .findById(documentId)
+                                .orElseThrow(() ->
+                                        new IllegalArgumentException(
+                                                "Document not found"
+                                        )
+                                );
+
+                if (document.getVersionNumber()
+                        != expectedCurrentVersion) {
+
+                    throw new ConcurrentModificationException(
+                            "Document changed while restoring"
+                    );
+                }
+
+                DocumentVersion oldVersion =
+                        getVersion(
+                                documentId,
+                                versionToRestore
+                        );
+
+                long newVersionNumber =
+                        document.getVersionNumber() + 1;
+
+                DocumentVersion restoredVersion =
+                        versionFactory.create(
+                                documentId,
+                                newVersionNumber,
+                                document.getLatestVersionId(),
+                                oldVersion.getContent(),
+                                user.getId(),
+                                OperationType.RESTORE
+                        );
+
+                versionRepository.save(
+                        restoredVersion
+                );
+
+                documentRepository.updateLatestVersion(
+                        documentId,
+                        restoredVersion.getVersionId(),
+                        newVersionNumber
+                );
+
+                return restoredVersion;
+            }
+        }
+    }
+
+    // ============================================================
+    // DEMO
+    // ============================================================
+
+    public static void main(String[] args) {
+
+        DocumentRepository documentRepository =
+                new InMemoryDocumentRepository();
+
+        VersionRepository versionRepository =
+                new InMemoryVersionRepository();
+
+        VersionFactory versionFactory =
+                new VersionFactory();
+
+        DocumentLockManager lockManager =
+                new DocumentLockManager();
+
+        DocumentService service =
+                new DocumentService(
+                        documentRepository,
+                        versionRepository,
+                        versionFactory,
+                        lockManager
+                );
+
+        User user1 =
+                new User("U1", "Alice");
+
+        User user2 =
+                new User("U2", "Bob");
+
+        // V1
+        DocumentVersion v1 =
+                service.createDocument(
+                        "Interview Notes",
+                        "Hello",
+                        user1
+                );
+
+        System.out.println(v1);
+
+        // V2
+        DocumentVersion v2 =
+                service.updateDocument(
+                        "D1",
+                        "Hello World",
+                        1,
+                        user1
+                );
+
+        System.out.println(v2);
+
+        // V3
+        DocumentVersion v3 =
+                service.updateDocument(
+                        "D1",
+                        "Hello World!",
+                        2,
+                        user2
+                );
+
+        System.out.println(v3);
+
+        // Restore V1 -> creates V4
+        DocumentVersion v4 =
+                service.restoreVersion(
+                        "D1",
+                        1,
+                        3,
+                        user1
+                );
+
+        System.out.println(v4);
+
+        // History
+        System.out.println("\nVersion History:");
+
+        for (DocumentVersion version :
+                service.getHistory("D1")) {
+
+            System.out.println(version);
+        }
+
+        // Concurrency conflict
+        try {
+
+            service.updateDocument(
+                    "D1",
+                    "Stale update",
+                    2,      // stale version
+                    user2
+            );
+
+        } catch (ConcurrentModificationException e) {
+
+            System.out.println(
+                    "\nConflict detected: "
+                            + e.getMessage()
+            );
+        }
+    }
+}

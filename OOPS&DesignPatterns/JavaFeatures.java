@@ -30,8 +30,10 @@ class JavaFeatures {
       interface FunctionalInterfaceExample {
           void execute();
       }
-      //lamba expression for functional interface
-      FunctionalInterfaceExample example = () -> System.out.println("Executing functional interface");
+      //lambda expression for functional interface
+      FunctionalInterfaceExample example = () -> System.out.println("Functional interface lambda");
+      example.execute();
+      
       Runnable r= ()-> System.out.println("Running in a thread");
       new Thread(r).start();
       //default and static methods in interfaces
@@ -118,7 +120,13 @@ class JavaFeatures {
         //what happens if we try to get a value for a key that is not present in the unmodifiable map
         Map<String,String> mp= new HashMap<>();
         mp.put("key1", "value1"); 
-        mp.get(null);
+        System.out.println(mp.get("key2"));
+        AtomicInteger atomic= new AtomicInteger();
+        atomic.set(3);
+        System.out.println(atomic.get());
+        atomic.compareAndSet(3,2);
+        System.out.println(atomic.get());
+
         //what is Futures in java
         //Futures in java are used to represent the result of an asynchronous computation. It allows
         //it allows us to write non-blocking code by allowing us to retrieve the result of a computation at a later time when it is available. We can use the Future interface and the ExecutorService to submit tasks and retrieve their results asynchronously.
@@ -158,11 +166,14 @@ class JavaFeatures {
       
         }
         //paging in os
-        //is the way to manage memory in an operating system by dividing the memory into fixed-size pages and mapping them to physical memory. It allows the operating system to efficiently use memory and provides a way to handle memory fragmentation. When a process needs to access a page that is not currently in physical memory, 
+        //is the way to manage memory in an operating system by dividing the memory into fixed-size pages and mapping them to physical memory. It allows the operating system to efficiently use memory and provides a way to handle memory fragmentation.
+        //  When a process needs to access a page that is not currently in physical memory, 
         // a page fault occurs, and the operating system retrieves the page from disk and loads it into physical memory.
 }//what is fragmentation in memory management
-//Fragmentation in memory management refers to the condition where memory is used inefficiently, leading to wasted space. There are two types of fragmentation: external fragmentation and internal fragmentation. 
-// External fragmentation occurs when there are small, unused blocks of memory scattered throughout the system, making it difficult to allocate large contiguous blocks of memory. Internal fragmentation occurs when allocated memory blocks are larger than the requested memory, resulting in unused space within the allocated block.
+//Fragmentation in memory management refers to the condition where memory is used inefficiently, leading to wasted space. There are two types of fragmentation: 
+// external fragmentation and internal fragmentation. 
+// External fragmentation occurs when there are small, unused blocks of memory scattered throughout the system, making it difficult to allocate large contiguous blocks of memory.
+//  Internal fragmentation occurs when allocated memory blocks are larger than the requested memory, resulting in unused space within the allocated block.
 //  Both types of fragmentation can lead to performance issues and inefficient use of memory resources.
 //segmentation in memory management
 //Segmentation in memory management is a technique where the memory is divided into variable-sized segments based on the logical divisions of a program, such as code, data, and stack segments. 
